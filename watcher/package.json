@@ -1,0 +1,16 @@
+{
+  "name": "cs2-steam-watch",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Follows Steam's PICS change feed and fires a GitHub repository_dispatch the moment a new CS2 public build ships",
+  "type": "module",
+  "main": "watch.js",
+  "scripts": {
+    "start": "node watch.js",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "steam-user": "5.3.0"
+  }
+}

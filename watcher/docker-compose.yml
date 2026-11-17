@@ -1,0 +1,15 @@
+# docker compose -f watcher/docker-compose.yml up -d --build
+services:
+  cs2-steam-watch:
+    build: .
+    container_name: cs2-steam-watch
+    restart: unless-stopped
+    env_file: .env          # GITHUB_TOKEN=... (see README.md)
+    environment:
+      GITHUB_REPO: s2script/s2script
+      DISPATCH_EVENT: cs2-update-poll
+      POLL_MS: "5000"
+    volumes:
+      - cs2-steam-watch:/data
+volumes:
+  cs2-steam-watch:
