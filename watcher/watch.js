@@ -56,8 +56,11 @@ let changenumber = state.changenumber ?? 0;
 let lastPollOk = 0;
 let failures = 0;
 let busy = false;
+let dispatching = false; // a GitHub dispatch (with its retry backoff) is in flight
 
 function restartIfDead(why) {
+  // Steam answered the poll that found the build; waiting on GitHub is not a dead Steam session.
+  if (dispatching) return;
   if (!sessionDead({ failures, lastOkMs: lastPollOk, now: Date.now(), maxFailures: cfg.maxFailures, staleMs: cfg.staleMs })) return;
   log(`Steam session looks dead (${why}; ${failures} failed polls in a row, last ok ${lastPollOk ? new Date(lastPollOk).toISOString() : 'never'}); exiting so the container restarts with a fresh login`);
   process.exit(1);
@@ -106,7 +109,15 @@ async function check(client, why) {
     return;
   }
   log(`NEW BUILD ${build.buildid} manifest ${build.manifest} (${d.reason}; ${why}) -> repository_dispatch ${cfg.repo}`);
-  if (await dispatch(build)) {
+  dispatching = true;
+  let sent;
+  try {
+    sent = await dispatch(build);
+  } finally {
+    dispatching = false;
+    lastPollOk = Date.now(); // the dispatch wait doesn't count against the Steam session
+  }
+  if (sent) {
     state = { ...state, ...build, changenumber, dispatchedAt: new Date().toISOString() };
     saveState(state);
     log('dispatched');
