@@ -8,7 +8,7 @@ import SteamUser from 'steam-user';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { backoff, decide, dispatchBody, readBuild } from './lib.js';
+import { backoff, decide, dispatchBody, readBuild, sessionDead } from './lib.js';
 
 const env = process.env;
 const cfg = {
@@ -23,6 +23,12 @@ const cfg = {
   healthPort: env.HEALTH_PORT ? Number(env.HEALTH_PORT) : null,
   fireOnStart: env.FIRE_ON_START === '1',
   dryRun: env.DRY_RUN === '1',
+  // Exit (and let the container restart us) after this many polls fail in a row, or when no
+  // poll has succeeded for staleMs. A fresh process logs in again and reads the app directly.
+  maxFailures: Number(env.MAX_POLL_FAILURES ?? 3),
+  staleMs: Number(env.STALE_MS ?? 60000),
+  // Read the app directly this often even with no changelist, in case one was missed.
+  recheckMs: Number(env.RECHECK_MS ?? 5 * 60 * 1000),
 };
 if (!cfg.token && !cfg.dryRun) {
   console.error('GITHUB_TOKEN is required (a fine-grained token with Contents: read and write on the repo), or set DRY_RUN=1');
@@ -48,7 +54,14 @@ function saveState(s) {
 let state = loadState();
 let changenumber = state.changenumber ?? 0;
 let lastPollOk = 0;
+let failures = 0;
 let busy = false;
+
+function restartIfDead(why) {
+  if (!sessionDead({ failures, lastOkMs: lastPollOk, now: Date.now(), maxFailures: cfg.maxFailures, staleMs: cfg.staleMs })) return;
+  log(`Steam session looks dead (${why}; ${failures} failed polls in a row, last ok ${lastPollOk ? new Date(lastPollOk).toISOString() : 'never'}); exiting so the container restarts with a fresh login`);
+  process.exit(1);
+}
 
 async function dispatch(build) {
   const body = dispatchBody(cfg.eventType, build, changenumber);
@@ -114,9 +127,12 @@ async function poll(client) {
     const gap = changenumber && ch.currentChangeNumber - changenumber > 5000;
     changenumber = ch.currentChangeNumber;
     lastPollOk = Date.now();
+    failures = 0;
     if (touched || gap) await check(client, touched ? `changelist ${changenumber}` : 'changelist gap');
   } catch (e) {
+    failures++;
     log('poll failed:', e.message);
+    restartIfDead(e.message);
   } finally {
     busy = false;
   }
@@ -131,10 +147,18 @@ client.on('loggedOn', async () => {
     if (!changenumber) changenumber = (await client.getProductChanges(0)).currentChangeNumber;
     await check(client, 'startup');
   } catch (e) {
-    log('startup check failed:', e.message);
+    // Without a first read we can't tell a new build from an old one; start over.
+    log('startup check failed:', e.message, '- exiting so the container restarts');
+    process.exit(1);
   }
   if (!timer) {
+    lastPollOk = Date.now();
     timer = setInterval(() => poll(client), cfg.pollMs);
+    // A stuck request never reaches poll's catch; this catches that too.
+    setInterval(() => restartIfDead('no successful poll'), 10000);
+    setInterval(() => {
+      check(client, 'periodic recheck').catch((e) => log('periodic recheck failed:', e.message));
+    }, cfg.recheckMs);
     setInterval(() => log(`alive: changelist ${changenumber}, watching build ${state.buildid} manifest ${state.manifest}`), 30 * 60 * 1000);
   }
 });

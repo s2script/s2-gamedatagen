@@ -49,3 +49,13 @@ export function dispatchBody(eventType, build, changenumber) {
 export function backoff(attempt, base = 2000, cap = 60000) {
   return Math.min(cap, base * 2 ** attempt);
 }
+
+/**
+ * Whether the Steam session looks dead and the process should exit so the container's restart
+ * policy brings up a fresh one. steam-user keeps a session whose requests all time out (a
+ * half-open connection) without ever emitting `disconnected`, so retrying on it never recovers.
+ */
+export function sessionDead({ failures, lastOkMs, now, maxFailures = 3, staleMs = 60000 }) {
+  if (failures >= maxFailures) return true;
+  return lastOkMs > 0 && now - lastOkMs > staleMs;
+}
