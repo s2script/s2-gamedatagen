@@ -3,6 +3,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 COPY lib.js watch.js ./
+# The state volume must exist, owned by node, before VOLUME: a fresh named volume copies this
+# directory's ownership, and the process runs as node.
+RUN mkdir -p /data && chown node:node /data
 USER node
 VOLUME ["/data"]
 ENV STATE_FILE=/data/state.json HEALTH_PORT=8080
