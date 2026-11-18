@@ -113,6 +113,8 @@ docker logs -f cs2-steam-watch
 | `POLL_MS` | `5000` | How often to ask Steam for changes since the last changelist. |
 | `STATE_FILE` | `/data/state.json` | Last build dispatched. A build that ships while the watcher is down fires on the next start. |
 | `HEALTH_PORT` | `8080` in the image | `GET /` is 200 while polls succeed. |
+| `MAX_POLL_FAILURES` / `STALE_MS` | `3` / `60000` | After that many failed polls in a row, or no good poll for that long, the watcher exits and the container's restart policy starts a fresh Steam login. |
+| `RECHECK_MS` | `300000` | Read the app directly this often too, in case a changelist was missed. |
 | `DRY_RUN` | | `1` logs the dispatch instead of sending it. |
 | `FIRE_ON_START` | | `1` fires for the current build on a first run with no state. |
 

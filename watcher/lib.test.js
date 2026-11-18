@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { backoff, decide, dispatchBody, readBuild } from './lib.js';
+import { backoff, decide, dispatchBody, readBuild, sessionDead } from './lib.js';
 
 const cfg = { depot: 2347773, branch: 'public' };
 const appinfo = (buildid, gid, asObject = false) => ({
@@ -39,4 +39,13 @@ test('dispatch body carries what the workflow reads', () => {
 test('backoff is capped', () => {
   assert.equal(backoff(0), 2000);
   assert.equal(backoff(20), 60000);
+});
+
+test('a session whose polls keep failing is dead', () => {
+  const now = 1_000_000;
+  assert.equal(sessionDead({ failures: 0, lastOkMs: now - 5000, now }), false);
+  assert.equal(sessionDead({ failures: 2, lastOkMs: now - 20000, now }), false);
+  assert.equal(sessionDead({ failures: 3, lastOkMs: now - 20000, now }), true);
+  assert.equal(sessionDead({ failures: 0, lastOkMs: now - 61000, now }), true); // stuck request
+  assert.equal(sessionDead({ failures: 0, lastOkMs: 0, now }), false); // not polling yet
 });
